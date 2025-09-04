@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestor de Recorridos y Tickets</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS (js-xlsx) CDN for Excel export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide-react@0.368.0/dist/lucide.min.js"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'brand': {
+                '50': '#f0f9ff',
+                '100': '#e0f2fe',
+                '200': '#bae6fd',
+                '300': '#7dd3fc',
+                '400': '#38bdf8',
+                '500': '#0ea5e9',
+                '600': '#0284c7',
+                '700': '#0369a1',
+                '800': '#075985',
+                '900': '#0c4a6e',
+              },
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+        /* Estilos adicionales para mejorar la apariencia */
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+        }
+        .modal-content {
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.3s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.95); }
+            to { opacity: 1; transform: scale(1); }
+        }
+        /* Ocultar scrollbar pero permitir scroll */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-slate-900 text-white font-sans">
+
+    <div id="app-container" class="max-w-4xl mx-auto p-4 md:p-6">
+
+        <!-- ===== PANTALLA DE LOGIN ===== -->
+        <section id="login-view" class="flex flex-col items-center justify-center min-h-screen">
+            <div class="w-full max-w-sm bg-slate-800 p-8 rounded-2xl shadow-2xl animate-fade-in">
+                <div class="flex flex-col items-center mb-6">
+                    <div class="bg-brand-600 p-3 rounded-full mb-4">
+                        <i data-lucide="shield-check" class="w-8 h-8 text-white"></i>
+                    </div>
+                    <h1 class="text-3xl font-bold text-white">Acceso al Sistema</h1>
+                    <p class="text-slate-400 mt-1">Selecciona tu rol para continuar</p>
+                </div>
+                
+                <div class="space-y-4">
+                    <button onclick="login('inspector')" class="w-full flex items-center justify-center bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 px-4 rounded-lg transition duration-300 transform hover:scale-105">
+                        <i data-lucide="user-cog" class="w-5 h-5 mr-2"></i>
+                        Inspector de Recorridos
+                    </button>
+                    
+                    <div class="relative">
+                        <div class="absolute inset-0 flex items-center">
+                            <div class="w-full border-t border-slate-600"></div>
+                        </div>
+                        <div class="relative flex justify-center text-sm">
+                            <span class="bg-slate-800 px-2 text-slate-400">o accede como departamento</span>
+                        </div>
+                    </div>
+
+                    <select id="department-login-select" class="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block p-3">
+                        <option selected disabled>Selecciona un departamento...</option>
+                    </select>
+                    <button onclick="login('departamento')" class="w-full bg-slate-700 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg transition duration-300">
+                        Acceder como Departamento
+                    </button>
+                </div>
+            </div>
+            <footer class="text-center text-slate-500 text-sm mt-8">
+                <p>Aplicación de Gestión de Tickets v1.0</p>
+                <p class="mt-1">Los datos se guardan localmente en tu navegador.</p>
+            </footer>
+        </section>
+
+        <!-- ===== VISTA PRINCIPAL (INSPECTOR Y DEPARTAMENTO) ===== -->
+        <main id="main-view" class="hidden animate-fade-in">
+            <header class="flex justify-between items-center mb-6 pb-4 border-b border-slate-700">
+                <div>
+                    <h1 id="main-title" class="text-3xl font-bold text-white"></h1>
+                    <p id="main-subtitle" class="text-slate-400"></p>
+                </div>
+                <button onclick="logout()" class="flex items-center bg-slate-700 hover:bg-red-600/80 text-white font-semibold py-2 px-4 rounded-lg transition duration-300">
+                    <i data-lucide="log-out" class="w-5 h-5 mr-2"></i> Salir
+                </button>
+            </header>
+
+            <!-- Contenido del Inspector -->
+            <div id="inspector-content">
+                <div id="active-recorrido-banner" class="hidden bg-brand-800/50 border border-brand-600 text-brand-200 p-4 rounded-lg mb-6 flex justify-between items-center">
+                    <div>
+                        <p class="font-bold">Recorrido en progreso...</p>
+                        <p id="active-recorrido-start-time" class="text-sm"></p>
+                    </div>
+                    <button onclick="finalizarRecorrido()" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition">Finalizar Recorrido</button>
+                </div>
+
+                <div class="flex justify-center mb-6">
+                    <button id="btn-start-recorrido" onclick="iniciarRecorrido()" class="w-full md:w-auto bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 flex items-center justify-center transform hover:scale-105 shadow-lg">
+                        <i data-lucide="play-circle" class="w-5 h-5 mr-2"></i> Comenzar Nuevo Recorrido
+                    </button>
+                    <button id="btn-add-ticket" onclick="openTicketModal()" class="hidden w-full md:w-auto bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition duration-300 flex items-center justify-center transform hover:scale-105 shadow-lg">
+                         <i data-lucide="plus-circle" class="w-5 h-5 mr-2"></i> Agregar Nuevo Ticket
+                    </button>
+                </div>
+
+                <div id="tickets-durante-recorrido" class="mb-6">
+                    <h3 class="text-xl font-semibold mb-2 text-slate-300">Tickets de este recorrido (<span id="ticket-count">0</span>)</h3>
+                    <div id="current-tickets-list" class="space-y-3">
+                        <!-- Los tickets se insertarán aquí -->
+                    </div>
+                </div>
+
+                <div>
+                    <h2 class="text-2xl font-bold mb-4 text-white">Historial de Recorridos</h2>
+                    <div id="recorridos-list" class="space-y-4">
+                        <!-- Lista de recorridos pasados -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Contenido del Departamento -->
+            <div id="departamento-content" class="hidden">
+                 <div id="department-tickets-list" class="space-y-4">
+                    <!-- Lista de tickets para el departamento -->
+                </div>
+            </div>
+
+        </main>
+
+        <!-- ===== MODAL PARA CREAR/EDITAR TICKET ===== -->
+        <div id="ticket-modal" class="modal-backdrop hidden animate-fade-in">
+            <div class="bg-slate-800 w-full max-w-lg p-6 rounded-2xl shadow-2xl m-4 modal-content no-scrollbar">
+                <form id="ticket-form" class="space-y-4">
+                    <h2 id="modal-title" class="text-2xl font-bold text-white mb-4">Nuevo Ticket</h2>
+                    <input type="hidden" id="ticket-id">
+                    
+                    <div>
+                        <label for="ticket-location" class="block mb-2 text-sm font-medium text-slate-300">Lugar del Hallazgo</label>
+                        <input type="text" id="ticket-location" class="bg-slate-700 border border-slate-600 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full p-2.5" placeholder="Ej: Pasillo del piso 3, cerca del elevador" required>
+                    </div>
+
+                    <div>
+                        <label for="ticket-description" class="block mb-2 text-sm font-medium text-slate-300">Descripción</label>
+                        <textarea id="ticket-description" rows="3" class="bg-slate-700 border border-slate-600 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full p-2.5" placeholder="Describe la incidencia detalladamente..." required></textarea>
+                    </div>
+
+                    <div>
+                        <label class="block mb-2 text-sm font-medium text-slate-300">Prioridad</label>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            <button type="button" data-priority="Bajo" class="priority-btn border-2 border-green-500 text-green-500 font-semibold py-2 px-4 rounded-lg transition">Bajo</button>
+                            <button type="button" data-priority="Medio" class="priority-btn border-2 border-yellow-500 text-yellow-500 font-semibold py-2 px-4 rounded-lg transition">Medio</button>
+                            <button type="button" data-priority="Alto" class="priority-btn border-2 border-orange-500 text-orange-500 font-semibold py-2 px-4 rounded-lg transition">Alto</button>
+                            <button type="button" data-priority="Urgente" class="priority-btn border-2 border-red-500 text-red-500 font-semibold py-2 px-4 rounded-lg transition">Urgente</button>
+                        </div>
+                        <input type="hidden" id="ticket-priority" required>
+                    </div>
+
+                    <div>
+                        <label class="block mb-2 text-sm font-medium text-slate-300">Departamentos Responsables</label>
+                        <div id="department-checkboxes" class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            <!-- Checkboxes de departamentos se insertarán aquí -->
+                        </div>
+                        <div class="mt-2 flex">
+                            <input type="text" id="new-department-name" class="bg-slate-700 border-slate-600 text-white text-sm rounded-l-lg focus:ring-brand-500 focus:border-brand-500 block w-full p-2.5" placeholder="Agregar otro departamento">
+                            <button type="button" onclick="addManualDepartment()" class="bg-brand-600 text-white p-2.5 rounded-r-lg hover:bg-brand-700">
+                                <i data-lucide="plus" class="w-5 h-5"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block mb-2 text-sm font-medium text-slate-300">Fotografías</label>
+                        <input type="file" id="ticket-photo" accept="image/*" capture="environment" class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-brand-50 file:text-brand-700 hover:file:bg-brand-100"/>
+                        <img id="photo-preview" class="mt-2 rounded-lg max-h-40 hidden" src="" alt="Vista previa de la foto">
+                    </div>
+
+                    <div class="flex justify-end space-x-3 pt-4">
+                        <button type="button" onclick="closeTicketModal()" class="bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-lg transition">Cancelar</button>
+                        <button type="submit" class="bg-brand-600 hover:bg-brand-700 text-white font-bold py-2 px-4 rounded-lg transition">Guardar Ticket</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <!-- ===== MODAL PARA ACTUALIZAR TICKET (DEPARTAMENTO) ===== -->
+        <div id="update-ticket-modal" class="modal-backdrop hidden animate-fade-in">
+            <div class="bg-slate-800 w-full max-w-lg p-6 rounded-2xl shadow-2xl m-4 modal-content no-scrollbar">
+                <div id="update-modal-content" class="space-y-4">
+                    <!-- Contenido se carga dinámicamente -->
+                </div>
+            </div>
+        </div>
+
+
+    </div>
+
+    <script>
+    // ===== CONFIGURACIÓN INICIAL =====
+    const DEPARTMENTS = [
+        "Tecnologías", "A&B", "Ama de Llaves", "Mantenimiento", 
+        "Ventas", "Contraloría", "Jardinería", "Cocina", "Actividades"
+    ];
+    const PRIORITY_CLASSES = {
+        'Bajo': 'border-green-500 text-green-500',
+        'Medio': 'border-yellow-500 text-yellow-500',
+        'Alto': 'border-orange-500 text-orange-500',
+        'Urgente': 'border-red-500 text-red-500'
+    };
+    const STATUS_CLASSES = {
+        'Abierto': 'bg-red-500/20 text-red-300',
+        'En Proceso': 'bg-yellow-500/20 text-yellow-300',
+        'Cerrado': 'bg-green-500/20 text-green-300'
+    };
+
+    // ===== ESTADO DE LA APLICACIÓN =====
+    let appState = {
+        currentUser: null, // { role: 'inspector' } o { role: 'departamento', name: 'Mantenimiento' }
+        activeRecorridoId: null,
+        recorridos: [],
+        tickets: [],
+        allDepartments: [...DEPARTMENTS]
+    };
+
+    // ===== ELEMENTOS DEL DOM =====
+    const loginView = document.getElementById('login-view');
+    const mainView = document.getElementById('main-view');
+    const inspectorContent = document.getElementById('inspector-content');
+    const departamentoContent = document.getElementById('departamento-content');
+    const ticketModal = document.getElementById('ticket-modal');
+    const updateTicketModal = document.getElementById('update-ticket-modal');
+    const ticketForm = document.getElementById('ticket-form');
+
+    // ===== LÓGICA DE LA APLICACIÓN =====
+
+    // --- Gestión de Datos (Simulando Backend con LocalStorage) ---
+    function loadData() {
+        const savedState = localStorage.getItem('appState');
+        if (savedState) {
+            appState = JSON.parse(savedState);
+            // Asegurarse de que las fechas se manejen correctamente después de la deserialización
+            appState.recorridos.forEach(r => {
+                r.startTime = new Date(r.startTime);
+                if (r.endTime) r.endTime = new Date(r.endTime);
+            });
+        }
+        // NOTA: Para una aplicación real multiusuario, aquí se realizarían llamadas a una API (ej. Firebase, REST API).
+    }
+
+    function saveData() {
+        localStorage.setItem('appState', JSON.stringify(appState));
+        // NOTA: En una app real, esta función enviaría los datos actualizados al servidor.
+    }
+
+    // --- Gestión de Vistas ---
+    function navigate(view) {
+        loginView.classList.add('hidden');
+        mainView.classList.add('hidden');
+        
+        if (view === 'login') {
+            loginView.classList.remove('hidden');
+        } else if (view === 'main') {
+            mainView.classList.remove('hidden');
+        }
+        lucide.createIcons();
+    }
+
+    // --- Autenticación ---
+    function login(role) {
+        if (role === 'inspector') {
+            appState.currentUser = { role: 'inspector' };
+        } else {
+            const deptSelect = document.getElementById('department-login-select');
+            if (deptSelect.value) {
+                appState.currentUser = { role: 'departamento', name: deptSelect.value };
+            } else {
+                alert('Por favor, selecciona un departamento.');
+                return;
+            }
+        }
+        saveData();
+        renderMainView();
+        navigate('main');
+    }
+
+    function logout() {
+        if (appState.activeRecorridoId) {
+            if (!confirm('Tienes un recorrido activo. Si sales, se guardará y finalizará. ¿Deseas continuar?')) {
+                return;
+            }
+            finalizarRecorrido();
+        }
+        appState.currentUser = null;
+        saveData();
+        navigate('login');
+    }
+
+    // --- Lógica de Recorridos ---
+    function iniciarRecorrido() {
+        if (appState.activeRecorridoId) {
+            alert('Ya hay un recorrido en progreso.');
+            return;
+        }
+        const newRecorrido = {
+            id: Date.now(),
+            startTime: new Date(),
+            endTime: null,
+        };
+        appState.recorridos.push(newRecorrido);
+        appState.activeRecorridoId = newRecorrido.id;
+        saveData();
+        renderMainView();
+    }
+
+    function finalizarRecorrido() {
+        if (!appState.activeRecorridoId) return;
+        
+        const recorrido = appState.recorridos.find(r => r.id === appState.activeRecorridoId);
+        if (recorrido) {
+            recorrido.endTime = new Date();
+        }
+        appState.activeRecorridoId = null;
+        saveData();
+        renderMainView();
+    }
+
+    // --- Lógica de Tickets ---
+    function openTicketModal(ticketId = null) {
+        ticketForm.reset();
+        document.getElementById('photo-preview').classList.add('hidden');
+        document.getElementById('ticket-priority').value = '';
+        
+        document.querySelectorAll('.priority-btn').forEach(btn => btn.classList.remove('bg-opacity-100', 'text-white'));
+        
+        renderDepartmentCheckboxes();
+
+        if (ticketId) {
+            // Lógica de edición (no implementada en este flujo simple, pero la estructura está aquí)
+        } else {
+            document.getElementById('modal-title').textContent = 'Nuevo Ticket';
+        }
+        ticketModal.classList.remove('hidden');
+    }
+
+    function closeTicketModal() {
+        ticketModal.classList.add('hidden');
+    }
+    
+    ticketForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        const photoInput = document.getElementById('ticket-photo');
+        const file = photoInput.files[0];
+        
+        const processAndSaveTicket = (photoData) => {
+            const selectedDepartments = Array.from(document.querySelectorAll('#department-checkboxes input:checked')).map(cb => cb.value);
+
+            if (selectedDepartments.length === 0) {
+                alert('Debes seleccionar al menos un departamento responsable.');
+                return;
+            }
+
+            const newTicket = {
+                id: Date.now(),
+                recorridoId: appState.activeRecorridoId,
+                location: document.getElementById('ticket-location').value,
+                description: document.getElementById('ticket-description').value,
+                priority: document.getElementById('ticket-priority').value,
+                departments: selectedDepartments,
+                photo: photoData,
+                status: 'Abierto',
+                seguimiento: '',
+                createdAt: new Date().toISOString()
+            };
+            
+            appState.tickets.push(newTicket);
+            saveData();
+            renderCurrentTickets();
+            closeTicketModal();
+        }
+
+        if (file) {
+             const reader = new FileReader();
+             reader.onload = function(event) {
+                // NOTA: Guardar imágenes en Base64 en localStorage no es eficiente para producción.
+                // Una solución real usaría almacenamiento en la nube (ej: AWS S3, Firebase Storage)
+                // y solo guardaría la URL de la imagen.
+                processAndSaveTicket(event.target.result);
+             };
+             reader.readAsDataURL(file);
+        } else {
+            processAndSaveTicket(null); // Guardar sin foto
+        }
+    });
+
+    document.getElementById('ticket-photo').addEventListener('change', function(event) {
+        const file = event.target.files[0];
+        if (file) {
+            const preview = document.getElementById('photo-preview');
+            preview.src = URL.createObjectURL(file);
+            preview.classList.remove('hidden');
+        }
+    });
+
+    document.querySelectorAll('.priority-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.priority-btn').forEach(b => b.classList.remove('bg-opacity-100', 'text-white', `bg-${b.dataset.priority.toLowerCase()}-500`));
+            
+            const color = this.dataset.priority.toLowerCase();
+            this.classList.add(`bg-${color}-500`, 'text-white');
+            
+            document.getElementById('ticket-priority').value = this.dataset.priority;
+        });
+    });
+
+    function addManualDepartment() {
+        const input = document.getElementById('new-department-name');
+        const newDeptName = input.value.trim();
+        if (newDeptName && !appState.allDepartments.includes(newDeptName)) {
+            appState.allDepartments.push(newDeptName);
+            saveData();
+            renderDepartmentCheckboxes();
+            // Auto-seleccionar el nuevo departamento
+            const newCheckbox = document.querySelector(`#department-checkboxes input[value="${newDeptName}"]`);
+            if (newCheckbox) newCheckbox.checked = true;
+            input.value = '';
+        } else if (appState.allDepartments.includes(newDeptName)) {
+            alert('Este departamento ya existe.');
+        }
+    }
+    
+    // --- Lógica de Departamento ---
+    function openUpdateModal(ticketId) {
+        const ticket = appState.tickets.find(t => t.id === ticketId);
+        if (!ticket) return;
+
+        const content = document.getElementById('update-modal-content');
+        content.innerHTML = `
+            <div class="flex justify-between items-start">
+                <h2 class="text-2xl font-bold text-white mb-2">Detalle del Ticket #${ticket.id}</h2>
+                <button onclick="closeUpdateModal()" class="text-slate-400 hover:text-white">&times;</button>
+            </div>
+
+            ${ticket.photo ? `<img src="${ticket.photo}" alt="Foto del ticket" class="rounded-lg max-h-64 w-full object-cover mb-4">` : ''}
+            
+            <p><strong class="text-slate-400">Lugar:</strong> ${ticket.location}</p>
+            <p><strong class="text-slate-400">Descripción:</strong> ${ticket.description}</p>
+            <p><strong class="text-slate-400">Prioridad:</strong> <span class="font-bold ${PRIORITY_CLASSES[ticket.priority]}">${ticket.priority}</span></p>
+            <p><strong class="text-slate-400">Reportado:</strong> ${new Date(ticket.createdAt).toLocaleString()}</p>
+            
+            <div class="pt-4 border-t border-slate-700">
+                <label for="ticket-status-update" class="block mb-2 text-sm font-medium text-slate-300">Estado del Ticket</label>
+                <select id="ticket-status-update" class="bg-slate-700 border border-slate-600 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full p-2.5">
+                    <option value="Abierto" ${ticket.status === 'Abierto' ? 'selected' : ''}>Abierto</option>
+                    <option value="En Proceso" ${ticket.status === 'En Proceso' ? 'selected' : ''}>En Proceso</option>
+                    <option value="Cerrado" ${ticket.status === 'Cerrado' ? 'selected' : ''}>Cerrado</option>
+                </select>
+            </div>
+            
+            <div>
+                <label for="ticket-seguimiento-update" class="block mb-2 text-sm font-medium text-slate-300">Notas de Seguimiento</label>
+                <textarea id="ticket-seguimiento-update" rows="3" class="bg-slate-700 border border-slate-600 text-white text-sm rounded-lg focus:ring-brand-500 focus:border-brand-500 block w-full p-2.5" placeholder="Añade una actualización sobre el progreso...">${ticket.seguimiento}</textarea>
+            </div>
+
+            <div class="flex justify-end space-x-3 pt-4">
+                <button type="button" onclick="closeUpdateModal()" class="bg-slate-600 hover:bg-slate-700 text-white font-bold py-2 px-4 rounded-lg transition">Cancelar</button>
+                <button type="button" onclick="updateTicket(${ticket.id})" class="bg-brand-600 hover:bg-brand-700 text-white font-bold py-2 px-4 rounded-lg transition">Guardar Cambios</button>
+            </div>
+        `;
+        updateTicketModal.classList.remove('hidden');
+        lucide.createIcons();
+    }
+    
+    function closeUpdateModal() {
+        updateTicketModal.classList.add('hidden');
+    }
+
+    function updateTicket(ticketId) {
+        const ticket = appState.tickets.find(t => t.id === ticketId);
+        if (ticket) {
+            ticket.status = document.getElementById('ticket-status-update').value;
+            ticket.seguimiento = document.getElementById('ticket-seguimiento-update').value;
+            saveData();
+            renderDepartmentTickets();
+            closeUpdateModal();
+        }
+    }
+
+
+    // --- Renderizado de UI ---
+    function renderMainView() {
+        if (!appState.currentUser) return;
+
+        if (appState.currentUser.role === 'inspector') {
+            inspectorContent.classList.remove('hidden');
+            departamentoContent.classList.add('hidden');
+            document.getElementById('main-title').textContent = 'Panel de Inspector';
+            document.getElementById('main-subtitle').textContent = 'Inicia un recorrido para registrar hallazgos.';
+            
+            if (appState.activeRecorridoId) {
+                const recorrido = appState.recorridos.find(r => r.id === appState.activeRecorridoId);
+                document.getElementById('active-recorrido-banner').classList.remove('hidden');
+                document.getElementById('active-recorrido-start-time').textContent = `Iniciado a las: ${recorrido.startTime.toLocaleTimeString()}`;
+                document.getElementById('btn-start-recorrido').classList.add('hidden');
+                document.getElementById('btn-add-ticket').classList.remove('hidden');
+                document.getElementById('tickets-durante-recorrido').classList.remove('hidden');
+                renderCurrentTickets();
+            } else {
+                document.getElementById('active-recorrido-banner').classList.add('hidden');
+                document.getElementById('btn-start-recorrido').classList.remove('hidden');
+                document.getElementById('btn-add-ticket').classList.add('hidden');
+                document.getElementById('tickets-durante-recorrido').classList.add('hidden');
+            }
+            renderRecorridosList();
+
+        } else if (appState.currentUser.role === 'departamento') {
+            inspectorContent.classList.add('hidden');
+            departamentoContent.classList.remove('hidden');
+            document.getElementById('main-title').textContent = `Departamento: ${appState.currentUser.name}`;
+            document.getElementById('main-subtitle').textContent = 'Gestiona los tickets asignados a tu área.';
+            renderDepartmentTickets();
+        }
+    }
+
+    function renderCurrentTickets() {
+        const list = document.getElementById('current-tickets-list');
+        const tickets = appState.tickets.filter(t => t.recorridoId === appState.activeRecorridoId);
+        document.getElementById('ticket-count').textContent = tickets.length;
+        
+        if (tickets.length === 0) {
+            list.innerHTML = `<p class="text-slate-500 text-center py-4">Aún no hay tickets en este recorrido.</p>`;
+            return;
+        }
+
+        list.innerHTML = tickets.map(ticket => `
+            <div class="bg-slate-800 p-3 rounded-lg flex items-center justify-between">
+                <div class="flex items-center">
+                    ${ticket.photo ? `<img src="${ticket.photo}" class="w-12 h-12 rounded-md object-cover mr-4">` : `<div class="w-12 h-12 rounded-md bg-slate-700 flex items-center justify-center mr-4"><i data-lucide="image-off" class="w-6 h-6 text-slate-500"></i></div>`}
+                    <div>
+                        <p class="font-semibold text-white">${ticket.location}</p>
+                        <p class="text-sm text-slate-400">${ticket.description.substring(0, 40)}...</p>
+                    </div>
+                </div>
+                <div class="text-sm font-bold px-2 py-1 rounded-md ${PRIORITY_CLASSES[ticket.priority]} border ${PRIORITY_CLASSES[ticket.priority].replace('text', 'border')}">
+                    ${ticket.priority}
+                </div>
+            </div>
+        `).join('');
+        lucide.createIcons();
+    }
+
+    function renderRecorridosList() {
+        const list = document.getElementById('recorridos-list');
+        const recorridosTerminados = appState.recorridos
+            .filter(r => r.endTime)
+            .sort((a, b) => b.startTime - a.startTime);
+
+        if (recorridosTerminados.length === 0) {
+            list.innerHTML = `<div class="text-center py-8 bg-slate-800 rounded-lg">
+                <i data-lucide="history" class="w-12 h-12 text-slate-500 mx-auto"></i>
+                <p class="mt-4 text-slate-400">No hay recorridos completados.</p>
+            </div>`;
+            lucide.createIcons();
+            return;
+        }
+
+        list.innerHTML = recorridosTerminados.map(rec => {
+            const ticketCount = appState.tickets.filter(t => t.recorridoId === rec.id).length;
+            return `
+            <div class="bg-slate-800 p-4 rounded-lg shadow-md hover:bg-slate-700/50 transition">
+                <div class="flex flex-col md:flex-row justify-between md:items-center">
+                    <div>
+                        <p class="text-lg font-bold text-white">Recorrido del ${rec.startTime.toLocaleDateString()}</p>
+                        <p class="text-sm text-slate-400">
+                            Inició: ${rec.startTime.toLocaleTimeString()} | Finalizó: ${rec.endTime.toLocaleTimeString()}
+                        </p>
+                    </div>
+                    <div class="mt-4 md:mt-0 flex items-center space-x-4">
+                         <span class="text-sm font-semibold bg-brand-900 text-brand-300 px-3 py-1 rounded-full">${ticketCount} Tickets</span>
+                         <button onclick="exportToExcel(${rec.id})" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition flex items-center">
+                            <i data-lucide="file-spreadsheet" class="w-5 h-5 mr-2"></i> Exportar
+                        </button>
+                    </div>
+                </div>
+            </div>
+            `;
+        }).join('');
+        lucide.createIcons();
+    }
+    
+    function renderDepartmentTickets() {
+        const list = document.getElementById('department-tickets-list');
+        const departmentName = appState.currentUser.name;
+        const tickets = appState.tickets
+            .filter(t => t.departments.includes(departmentName))
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        
+        if (tickets.length === 0) {
+            list.innerHTML = `<div class="text-center py-8 bg-slate-800 rounded-lg">
+                <i data-lucide="inbox" class="w-12 h-12 text-slate-500 mx-auto"></i>
+                <p class="mt-4 text-slate-400">No tienes tickets asignados.</p>
+            </div>`;
+            lucide.createIcons();
+            return;
+        }
+
+        list.innerHTML = tickets.map(ticket => `
+            <div class="bg-slate-800 p-4 rounded-lg shadow-md cursor-pointer hover:bg-slate-700/50 transition" onclick="openUpdateModal(${ticket.id})">
+                <div class="flex flex-col md:flex-row justify-between md:items-center">
+                    <div class="flex items-center mb-3 md:mb-0">
+                        ${ticket.photo ? `<img src="${ticket.photo}" class="w-16 h-16 rounded-md object-cover mr-4">` : `<div class="w-16 h-16 rounded-md bg-slate-700 flex items-center justify-center mr-4 flex-shrink-0"><i data-lucide="image-off" class="w-8 h-8 text-slate-500"></i></div>`}
+                        <div>
+                            <p class="font-bold text-white">${ticket.location}</p>
+                            <p class="text-sm text-slate-400">${new Date(ticket.createdAt).toLocaleString()}</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <span class="text-sm font-bold px-3 py-1 rounded-full ${STATUS_CLASSES[ticket.status]}">${ticket.status}</span>
+                        <span class="text-sm font-bold px-3 py-1 rounded-md ${PRIORITY_CLASSES[ticket.priority]} border ${PRIORITY_CLASSES[ticket.priority].replace('text', 'border')}">${ticket.priority}</span>
+                        <i data-lucide="chevron-right" class="w-5 h-5 text-slate-500"></i>
+                    </div>
+                </div>
+            </div>
+        `).join('');
+        lucide.createIcons();
+    }
+    
+    function renderDepartmentLoginOptions() {
+        const select = document.getElementById('department-login-select');
+        select.innerHTML = '<option selected disabled>Selecciona un departamento...</option>';
+        appState.allDepartments.sort().forEach(dept => {
+            select.innerHTML += `<option value="${dept}">${dept}</option>`;
+        });
+    }
+
+    function renderDepartmentCheckboxes() {
+        const container = document.getElementById('department-checkboxes');
+        container.innerHTML = appState.allDepartments.sort().map(dept => `
+            <label class="flex items-center space-x-2 text-sm text-white bg-slate-700 p-2 rounded-md hover:bg-slate-600 cursor-pointer">
+                <input type="checkbox" value="${dept}" class="w-4 h-4 text-brand-600 bg-gray-100 border-gray-300 rounded focus:ring-brand-500">
+                <span>${dept}</span>
+            </label>
+        `).join('');
+    }
+
+    // --- Exportación a Excel ---
+    function exportToExcel(recorridoId) {
+        const recorrido = appState.recorridos.find(r => r.id === recorridoId);
+        const ticketsData = appState.tickets.filter(t => t.recorridoId === recorridoId);
+
+        const dataForSheet = ticketsData.map(t => ({
+            "ID Ticket": t.id,
+            "Fecha Creación": new Date(t.createdAt).toLocaleString(),
+            "Lugar": t.location,
+            "Descripción": t.description,
+            "Prioridad": t.priority,
+            "Departamentos Responsables": t.departments.join(', '),
+            "Estado": t.status,
+            "Seguimiento": t.seguimiento,
+        }));
+        
+        const worksheet = XLSX.utils.json_to_sheet(dataForSheet);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Tickets");
+        
+        // Ajustar anchos de columna
+        const colWidths = [
+            { wch: 15 }, { wch: 20 }, { wch: 30 }, { wch: 50 }, { wch: 10 },
+            { wch: 30 }, { wch: 15 }, { wch: 50 }
+        ];
+        worksheet["!cols"] = colWidths;
+
+        XLSX.writeFile(workbook, `Recorrido_${recorrido.id}_${recorrido.startTime.toLocaleDateString('sv')}.xlsx`);
+    }
+
+
+    // --- Inicialización ---
+    function init() {
+        loadData();
+        renderDepartmentLoginOptions();
+        
+        // Comprobar si hay una sesión activa
+        if (appState.currentUser) {
+            renderMainView();
+            navigate('main');
+        } else {
+            navigate('login');
+        }
+    }
+
+    // Iniciar la aplicación cuando el DOM esté listo
+    document.addEventListener('DOMContentLoaded', init);
+
+    </script>
+</body>
+</html>
